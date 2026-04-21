@@ -8,6 +8,7 @@ const ALLOWED_GARAGE_HOSTS = new Set([
 ]);
 
 const GARAGE_API_BASE_URL = "https://garage-backend.onrender.com/listings";
+const GARAGE_API_TIMEOUT_MS = 8_000;
 
 export type GarageListing = {
   id: string;
@@ -92,32 +93,57 @@ export function extractGarageListingId(input: string) {
 }
 
 export async function fetchGarageListing(listingId: string) {
-  const response = await fetch(`${GARAGE_API_BASE_URL}/${listingId}`, {
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), GARAGE_API_TIMEOUT_MS);
 
-  if (response.status === 404) {
-    throw new GarageApiError("That listing could not be found in Garage.", 404);
+  try {
+    const response = await fetch(`${GARAGE_API_BASE_URL}/${listingId}`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+
+    if (response.status === 404) {
+      throw new GarageApiError("That listing could not be found in Garage.", 404);
+    }
+
+    if (!response.ok) {
+      throw new GarageApiError(
+        "Garage did not return listing data successfully.",
+        502,
+      );
+    }
+
+    const listing = (await response.json()) as Partial<GarageListing>;
+
+    if (!listing || typeof listing !== "object" || listing.id !== listingId) {
+      throw new GarageApiError(
+        "Garage returned listing data in an unexpected format.",
+        502,
+      );
+    }
+
+    return listing as GarageListing;
+  } catch (error) {
+    if (error instanceof GarageApiError) {
+      throw error;
+    }
+
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new GarageApiError("Garage took too long to respond.", 504);
+    }
+
+    if (error instanceof SyntaxError) {
+      throw new GarageApiError(
+        "Garage returned listing data in an unexpected format.",
+        502,
+      );
+    }
+
+    throw new GarageApiError("Unable to reach Garage right now.", 502);
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  if (!response.ok) {
-    throw new GarageApiError(
-      "Garage did not return listing data successfully.",
-      502,
-    );
-  }
-
-  const listing = (await response.json()) as Partial<GarageListing>;
-
-  if (!listing || typeof listing !== "object" || listing.id !== listingId) {
-    throw new GarageApiError(
-      "Garage returned listing data in an unexpected format.",
-      502,
-    );
-  }
-
-  return listing as GarageListing;
 }
