@@ -121,7 +121,7 @@ export function InvoiceGenerator() {
             <span className="mr-2 inline-flex items-center [&_svg]:size-4">
               <DownloadIcon />
             </span>
-            {isGenerating ? "Downloading..." : "Download PDF"}
+            {isGenerating ? "Downloading..." : "Get PDF Invoice"}
           </Button>
         </div>
 
